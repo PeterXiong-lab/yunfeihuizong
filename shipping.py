@@ -1,7 +1,7 @@
 import os
 import re
 import pandas as pd
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, PatternFill, Border, Side
 
 def process_interactive():
     user_input = input("请输入要提取的txt文件名（多个文件请用逗号隔开）：\n> ")
@@ -35,17 +35,15 @@ def process_interactive():
             except UnicodeDecodeError:
                 continue
                 
-        # 【修改点】以 "PO-" 作为订单的分割符，这样比按换行符分割更稳定
+        # 以 "PO-" 作为订单的分割符
         orders = re.split(r'PO-', content)
-        # 去除空字符串
         orders = [o for o in orders if o.strip()]
         
         data = []
         for order in orders:
-            # 【修改点】把换行符全部替换为空格，消除排版差异导致的正则匹配失败
             order_text = order.replace('\n', ' ')
             
-            # 正则匹配仓库名和费用（增加 \s* 以兼容可能存在的空格）
+            # 正则匹配仓库名和费用
             city_match = re.search(r'天猫美团(.*?)仓', order_text)
             fees_match = re.search(r'快递\s*([\d.]+)\s*物流\s*([\d.]+)', order_text)
             
@@ -72,7 +70,7 @@ def process_interactive():
     # 横向合并所有表
     final_df = pd.concat(all_dataframes, axis=1, join='outer')
     
-    # 按照列名数字大小进行升序排序，确保 5.18 在 5.19 前面
+    # 按照列名数字大小进行升序排序
     try:
         sorted_cols = sorted(final_df.columns, key=lambda x: float(x))
         final_df = final_df[sorted_cols]
@@ -80,19 +78,49 @@ def process_interactive():
         sorted_cols = sorted(final_df.columns)
         final_df = final_df[sorted_cols]
 
+    # 计算总费用列
+    final_df['总费用'] = final_df.sum(axis=1, skipna=True)
+
     # 导出 Excel 
     output_excel = "动态物流费用合并结果.xlsx"
     with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
         final_df.to_excel(writer, sheet_name='费用汇总')
         worksheet = writer.sheets['费用汇总']
         
+        # 定义样式：黄色填充、细黑边框
+        yellow_fill = PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid')
+        thin_border = Border(left=Side(style='thin'), 
+                             right=Side(style='thin'), 
+                             top=Side(style='thin'), 
+                             bottom=Side(style='thin'))
+        
+        # 获取最大列数，用来判断哪些列不要上色 (跳过A列和最后一列)
+        max_col_idx = worksheet.max_column
+        
+        # 遍历所有写入了数据的行和单元格
+        for row in worksheet.iter_rows():
+            is_express_row = False
+            
+            # 检查当前行是否是“快递”行（B列，即索引1）
+            if len(row) > 1 and row[1].value == '快递':
+                is_express_row = True
+                
+            for cell in row:
+                # 统一加上框线和居中
+                cell.border = thin_border
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+                # 精准上色：如果是快递行，且不是A列(仓库，idx=1)，且不是最后一列(总费用)才上色
+                # openpyxl 的 column 从 1 开始算
+                if is_express_row and cell.column > 1 and cell.column < max_col_idx:
+                    cell.fill = yellow_fill
+
+        # 调整所有列的列宽
         for col in worksheet.columns:
             column = col[0].column_letter
             worksheet.column_dimensions[column].width = 14
-            for cell in col:
-                cell.alignment = Alignment(horizontal='center', vertical='center')
                 
-    print(f"\n🎉 处理完成！已按日期排好序，文件保存为: {output_excel}")
+    print(f"\n🎉 处理完成！已增加框线并优化填充范围，文件保存为: {output_excel}")
 
 if __name__ == "__main__":
     process_interactive()
