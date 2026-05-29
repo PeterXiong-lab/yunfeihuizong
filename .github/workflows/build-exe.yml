@@ -1,0 +1,54 @@
+name: Build Windows EXE
+
+# 触发条件：当代码推送到 main 分支，或者手动触发时运行
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Executable on Windows
+    # 指定使用最新的 Windows 运行环境
+    runs-on: windows-latest
+
+    steps:
+      # 1. 获取最新代码
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. 配置 Python 环境
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # 你可以根据实际使用的版本修改，比如 3.10 或 3.12
+
+      # 3. 安装依赖包
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          # 如果你有 requirements.txt，取消下面这行的注释
+          # pip install -r requirements.txt
+          
+          # 针对刚才的脚本，你需要安装这些库：
+          pip install pandas openpyxl
+
+      # 4. 执行 PyInstaller 打包
+      - name: Build EXE with PyInstaller
+        run: |
+          # --onefile 表示打包成单个 exe 文件
+          # --clean 表示清理打包过程中的临时文件
+          # 将 main.py 替换为你实际的脚本文件名，例如 process_shipping.py
+          pyinstaller --onefile --clean shipping.py
+
+      # 5. 上传打包好的 EXE 文件到 GitHub Artifacts
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Executable
+          # PyInstaller 生成的 exe 默认存放在 dist 目录下
+          path: dist/*.exe
+          # 设置产物的保留天数
+          retention-days: 7
